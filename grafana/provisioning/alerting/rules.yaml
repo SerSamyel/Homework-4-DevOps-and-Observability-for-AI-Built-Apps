@@ -1,0 +1,53 @@
+apiVersion: 1
+
+groups:
+  - orgId: 1
+    name: order-tracker-alerts
+    folder: "Order Tracker"
+    interval: 1m
+    rules:
+      - uid: order-tracker-5xx
+        title: "Order lookups returning 5xx"
+        # Checked every time the group evaluates (1m), using the last 5m window.
+        condition: C
+        for: 0m
+        data:
+          - refId: A
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: prometheus
+            model:
+              refId: A
+              expr: sum(increase(order_lookup_requests_total{http_route="/api/orders/{order_id}", http_status_code=~"5.."}[5m]))
+              instant: true
+          - refId: C
+            relativeTimeRange:
+              from: 300
+              to: 0
+            datasourceUid: "-100"
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator:
+                    type: gt
+                    params: [0]
+                  operator:
+                    type: and
+                  query:
+                    params: ["A"]
+                  reducer:
+                    type: last
+        # A period with zero 5xx responses evaluates to "0 > 0" = false, so
+        # the alert correctly shows Normal (not Firing) when nothing is wrong.
+        # noDataState covers the case where the metric hasn't been scraped yet.
+        noDataState: Normal
+        execErrState: Error
+        labels:
+          severity: critical
+          endpoint: "/api/orders/{order_id}"
+        annotations:
+          summary: "Order Tracker is returning 5xx errors on order lookups"
+          description: "GET /api/orders/{order_id} has returned 5xx responses in the last 5 minutes. Dashboard: http://localhost:3000/d/order-tracker/order-tracker"
